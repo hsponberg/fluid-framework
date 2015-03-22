@@ -33,11 +33,11 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
 
 	private final HashMap<String, android.view.View> viewsById = new HashMap<>();
 
-	private final String dataModelKeyPrefix;
+	private String dataModelKeyPrefix;
 
-	private final Screen screen; // null if this is a subview
+	private Screen screen; // null if this is a subview
 
-	private final Layout layout;
+	private Layout layout;
 
 	static int containerId = 1;
 
@@ -49,7 +49,7 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
 
 	private android.view.View currentViewFocused = null;
 
-	private final CustomLayout rootCustomLayout; // screen
+	private CustomLayout rootCustomLayout; // screen
 
 	private boolean listenToDataModelChanges = true;
 
@@ -57,11 +57,11 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
 
 	private boolean listenForTouchEvent = false;
 
-	private final String viewPath;
+	private String viewPath;
 
-	private final ModalView modalView;
+	private ModalView modalView;
 
-	protected final boolean lastViewPathTokenIsIndex;
+	protected boolean lastViewPathTokenIsIndex;
 
 	Bounds measuringBounds = new Bounds(0, 0, 0, 0);
 
@@ -83,6 +83,8 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
 
 	ArrayList<String> conditionalListenerIds = new ArrayList<>();
 
+	boolean recycling = false;
+	
 	public CustomLayout(Context context, Screen screen, Layout layout,
 			Bounds bounds, String dataModelPrefix,
 			com.sponberg.fluid.layout.Color defaultBackgroundColor,
@@ -150,6 +152,110 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
 		}
     }
 
+	public void recycle(Screen screen, Layout layout,
+			Bounds bounds, String dataModelPrefix,
+			com.sponberg.fluid.layout.Color defaultBackgroundColor,
+			String viewPath, boolean listenForTouchEvent, CustomLayout rootCustomLayout,
+			boolean listenToDataModelChanges, String dataModelListenerId, ModalView modalView,
+			boolean wrapInScrollView, boolean lastViewPathTokenIsIndex, ListViewFluid insideTableView) {
+		
+		recycling = true;
+		
+		// hstdbc cleanup?
+		
+		// hstdbc time?
+		final String updateViewsOld = (this.dataModelKeyPrefix == null) ? "default" : this.dataModelKeyPrefix;
+		String conditionalListenerIdOld = "customLayout-" + this.getId() + "-conditional-" + updateViewsOld;
+		GlobalState.fluidApp.getDataModelManager().removeDataChangeListener(conditionalListenerIdOld);
+
+		for (int i = 0; i < getChildCount(); i++) {
+
+	        android.view.View child = getChildAt(i);
+	        child.setVisibility(android.view.View.INVISIBLE);
+		}
+		
+		isRoot = false;
+
+		measurePass = true;
+
+		currentViewFocused = null;
+
+		measuringBounds = new Bounds(0, 0, 0, 0);
+
+		scrollView = null;
+
+		scrollViewView = null;
+
+		keyboardShowing = false;
+
+		userActivityEnabled = true;
+
+		cleanedUp = false;
+
+		created = false;
+
+		conditionalListenerIds = new ArrayList<>();		
+		
+        this.screen = screen;
+        this.layout = layout;
+        this.dataModelKeyPrefix = dataModelPrefix;
+        setId(containerId++);
+		this.bounds.setTo(bounds);
+		this.viewPath = viewPath;
+		this.listenForTouchEvent = listenForTouchEvent;
+		this.rootCustomLayout = rootCustomLayout;
+		this.listenToDataModelChanges = listenToDataModelChanges;
+		this.dataModelListenerId = dataModelListenerId;
+		if (this.dataModelListenerId == null) {
+			this.dataModelListenerId = (rootCustomLayout != null) ? rootCustomLayout.getDataModelListenerId() : layout.getId();
+		}
+		this.modalView = modalView;
+		this.wrapInScrollView = wrapInScrollView;
+		this.lastViewPathTokenIsIndex = lastViewPathTokenIsIndex;
+		this.insideTableView = insideTableView;
+		
+		if (layout.isBlockFocusViewOnLoad()) {
+			this.setFocusable(true);
+			this.setFocusableInTouchMode(true);
+		}
+		
+		createOrUpdateViews(this.bounds);
+		if (layout.getBackgroundColor() != null) {
+			this.setBackgroundColor(CustomLayout.getColor(layout.getBackgroundColor()));
+		} else if (defaultBackgroundColor != null) {
+			this.setBackgroundColor(CustomLayout.getColor(defaultBackgroundColor));
+		}
+
+		final String updateViews = (dataModelPrefix == null) ? "default" : dataModelPrefix;
+
+		for (final String conditionalKey : layout.getConditionalKeys()) {
+
+			String conditionalListenerId = "customLayout-" + this.getId() + "-conditional-" + updateViews;
+			conditionalListenerIds.add(conditionalListenerId);
+			GlobalState.fluidApp.getDataModelManager().addDataChangeListener(conditionalKey,
+					conditionalListenerId,
+					new DataChangeListener() {
+						@Override
+						public void dataChanged(String key, String... subKeys) {
+							GlobalState.fluidApp.getSystemService().runOnUiThread(new Runnable() {
+								@Override
+								public void run() {
+									if (CustomLayout.this.insideTableView != null) {
+										CustomLayout.this.insideTableView.reloadData();
+									}
+
+									createOrUpdateViews(CustomLayout.this.bounds);
+								}
+							});
+						}
+						@Override
+						public void dataRemoved(String arg0) {
+							// Do nothing, hstdbc cleanup views?
+						}
+					});
+		}
+    }
+	
 	/* todo: implement
 	public void reset(Context context, Screen screen, Layout layout,
 			Bounds bounds, String dataModelPrefix,
@@ -317,7 +423,7 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
 			scrollViewView.measure(0, 0);
 		}
 
-		if (!measurePass) {
+		if (!measurePass || recycling) {
 			setLeft(parentBounds.x);
 			setTop(parentBounds.y);
 			setRight(parentBounds.x + parentBounds.width);
@@ -355,6 +461,7 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
             ViewBehavior viewBehavior = view.getViewBehavior();
 
             FluidViewAndroid fluidView = (FluidViewAndroid) viewsById.get(view.getId());
+            
             if (fluidView == null && view.isVisible()) {
             	if (Looper.myLooper() != Looper.getMainLooper() && viewBehavior.getType().equals(ViewBehavior.webview)) {
 					// hstdbc don't reference webview like this, make more oo
@@ -364,7 +471,28 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
             	fluidView = (FluidViewAndroid) GlobalState.fluidApp.getFluidViewFactory().createView(viewBehavior.getType(), view, info);
             	addSubview((android.view.View) fluidView, view);
 
-            	if (fluidView instanceof ViewGroup) {
+            } else if (fluidView != null) {
+            	
+	            setViewBoundsAndMeasureOrLayout(fluidView, bounds);
+	            styleView((android.view.View) fluidView, view);
+	            
+	            if (view.isVisible()) {
+	            	((android.view.View) fluidView).setVisibility(android.view.View.VISIBLE);
+	            }
+	            
+	            if (recycling) {
+	            	GlobalState.fluidApp.getFluidViewFactory().recycleView(viewBehavior.getType(), fluidView, view, info);
+	            } else {
+	            	GlobalState.fluidApp.getFluidViewFactory().updateView(viewBehavior.getType(), fluidView, view, info);
+	            }
+	            
+	            if (recycling) {
+	            	((android.view.View) fluidView).setBackgroundColor(Color.RED);
+	            }
+            }
+            
+        	if (!created && fluidView != null) {
+        		if (fluidView instanceof ViewGroup) {
             		final android.view.ViewGroup androidViewGroup = (android.view.ViewGroup) fluidView;
 
             		for (int i = 0; i < androidViewGroup.getChildCount(); i++) {
@@ -388,15 +516,12 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
                             }
                         }
                     });
-            	}
-            } else if (fluidView != null) {
-	            setViewBoundsAndMeasureOrLayout(fluidView, bounds);
-	            styleView((android.view.View) fluidView, view);
-	            GlobalState.fluidApp.getFluidViewFactory().updateView(viewBehavior.getType(), fluidView, view, info);
-            }
+            	}    		
+        	}            
     	}
-
+    	
     	created = true;
+    	recycling = false;
 	}
 
 	private void checkAndCreateScrollView(Bounds parentBounds) {
@@ -785,4 +910,17 @@ public class CustomLayout extends ViewGroup implements FluidViewAndroid {
 		super.requestLayout();
 	}
 
+	OnClickListener onClickListener;
+	
+	@Override
+	public void setOnClickListener(OnClickListener l) {
+		super.setOnClickListener(l);
+		this.onClickListener = l;
+	}
+
+	public OnClickListener getOnClickListener() {
+	
+		return onClickListener;
+	}
+	
 }

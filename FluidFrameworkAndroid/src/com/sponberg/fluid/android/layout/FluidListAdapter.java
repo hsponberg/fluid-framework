@@ -1,6 +1,6 @@
 package com.sponberg.fluid.android.layout;
 
-import java.util.concurrent.CountDownLatch;
+import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -13,33 +13,33 @@ import android.widget.BaseAdapter;
 import com.sponberg.fluid.FluidApp;
 import com.sponberg.fluid.GlobalState;
 import com.sponberg.fluid.layout.ActionListener.EventInfo;
-import com.sponberg.fluid.layout.DataChangeListener;
 import com.sponberg.fluid.layout.Layout;
 import com.sponberg.fluid.layout.TableLayout;
 import com.sponberg.fluid.layout.TableLayout.TableSection;
 import com.sponberg.fluid.layout.TableRow;
 import com.sponberg.fluid.layout.ViewBehaviorTable;
-import com.sponberg.fluid.util.LRUCache;
-import com.sponberg.fluid.util.Logger;
 
 public class FluidListAdapter extends BaseAdapter {
 
 	protected final com.sponberg.fluid.layout.ViewPosition view;
 	
-	final static int kNumHeightsToPrecompute = 50;
+	//final static int kNumHeightsToPrecompute = 50;
 	
 	Bounds bounds;
 	
 	ViewBehaviorTable viewBehavior;
 	
-	private static ScheduledExecutorService precomputeService = Executors.newSingleThreadScheduledExecutor();
-	private static PrecomputeTask precomputeTask;
+	private static ScheduledExecutorService cleanupService = Executors.newSingleThreadScheduledExecutor();
+	//private static ScheduledExecutorService precomputeService = Executors.newSingleThreadScheduledExecutor();
+	//private static PrecomputeTask precomputeTask;
 	
-	private final LRUCache<Long, CustomLayout> viewsById = new LRUCache<>(100);
+	//private final LRUCache<Long, CustomLayout> viewsById = new LRUCache<>(100);
 	
 	private static final boolean viewCaching = true; 
 	
 	CustomLayout rootCustomLayout;
+	
+	ArrayList<CustomLayout> layoutsCreated = new ArrayList<>();
 	
 	public FluidListAdapter(com.sponberg.fluid.layout.ViewPosition view, CustomLayout rootCustomLayout) {
 		this.view = view;
@@ -48,10 +48,10 @@ public class FluidListAdapter extends BaseAdapter {
 	}
 	
 	public void hideViewWithId(long id) {
-		CustomLayout layout = viewsById.get(id);
-		if (layout != null) {
-			layout.setVisibility(View.INVISIBLE);
-		}
+		//CustomLayout layout = viewsById.get(id);
+		//if (layout != null) {
+		//	layout.setVisibility(View.INVISIBLE);
+		//}
 	}
 	
 	@Override
@@ -100,7 +100,12 @@ public class FluidListAdapter extends BaseAdapter {
 			height = getHeightForSectionHeaderLayout(layout, viewBehavior.getSectionHeaderHeight(), bounds.width, null);
 			
 			if (layout == null) {
-				ViewFluidSpace space = new ViewFluidSpace(parent.getContext());
+				ViewFluidSpace space;
+				if (androidView instanceof ViewFluidSpace) {
+					space = (ViewFluidSpace) androidView;
+				} else {
+					space = new ViewFluidSpace(parent.getContext());
+				}
 				space.bounds = new Bounds(0, 0, bounds.width, height);
 				return space;
 			}
@@ -123,12 +128,12 @@ public class FluidListAdapter extends BaseAdapter {
 
 	    // hstdbc update customlayout so that the parameters can change, this will give better memory as 
 	    // we can reuse cells
-		CustomLayout customLayout = (viewCaching || FluidApp.useCaching) ? viewsById.get(itemId) : null;
-		if (customLayout == null || !isRowLayout) {
+		//CustomLayout customLayout = (viewCaching || FluidApp.useCaching) ? viewsById.get(itemId) : null;
+		//if (customLayout == null || !isRowLayout) {
 
-			if (customLayout != null && !isRowLayout) {
-				customLayout.cleanup();
-			}
+			//if (customLayout != null && !isRowLayout) {
+			//	customLayout.cleanup();
+			//}
 			
 			String tableLayoutId = viewBehavior.getTableLayoutId();
 			com.sponberg.fluid.layout.Color defaultBackgroundColor = null;
@@ -165,9 +170,30 @@ public class FluidListAdapter extends BaseAdapter {
 			//			listenForTouchEvent, root, listenToDataModelChanges, dataModelListenerId);
             //} else {
             
+            CustomLayout customLayout;
+            ListAdapterClickListener listener;
+            if (androidView == null || !(androidView instanceof CustomLayout)) {
+            
 	            customLayout = new CustomLayout(parent.getContext(), null, layout,
 						rowBounds, dataPrefixKey, defaultBackgroundColor, viewPath,
 						listenForTouchEvent, root, listenToDataModelChanges, dataModelListenerId, null, false, false, parentLayout);
+	            layoutsCreated.add(customLayout);
+	            listener = new ListAdapterClickListener();
+	            customLayout.setOnClickListener(listener);
+            } else {
+            	
+            	/*
+            	customLayout = new CustomLayout(parent.getContext(), null, layout,
+						rowBounds, dataPrefixKey, defaultBackgroundColor, viewPath,
+						listenForTouchEvent, root, listenToDataModelChanges, dataModelListenerId, null, false, false, parentLayout);
+            	*/
+            	customLayout = (CustomLayout) androidView;
+            	customLayout.recycle(null, layout,
+						rowBounds, dataPrefixKey, defaultBackgroundColor, viewPath,
+						listenForTouchEvent, root, listenToDataModelChanges, dataModelListenerId, null, false, false, parentLayout);
+            	listener = (ListAdapterClickListener) customLayout.getOnClickListener();
+            	//customLayout.createOrUpdateViews(rowBounds);
+            }
             //}
 			customLayout.setRoot(false);
 			if ((viewCaching || FluidApp.useCaching)) {
@@ -175,50 +201,66 @@ public class FluidListAdapter extends BaseAdapter {
 				if (isRowLayout) {					
 					addViewToCache(dataPrefixKey, itemId, dataModelListenerId,
 							customLayout);
-				} else {
-					viewsById.put(itemId, customLayout);
-				}
+				}// else {
+				//	viewsById.put(itemId, customLayout);
+				//}
 			}
-		} else {
-			customLayout.createOrUpdateViews(rowBounds);
-		}
+		//} else {
+		//	customLayout.createOrUpdateViews(rowBounds);
+		//}
 		
 		final String dataPrefixKeyFinal = dataPrefixKey;
 		if (tableRow != null) {
-			final TableRow tableRowFinal = tableRow;
-			customLayout.setOnClickListener(new OnClickListener() {
-				@Override
-				public void onClick(View v) {
-					
-					if (!rootCustomLayout.isUserActivityEnabled()) {
-						return;
-					}
-					
-					EventInfo eventInfo = new EventInfo();
-					eventInfo.setDataModelKeyParent(dataPrefixKeyFinal);
-					eventInfo.setDataModelKey(tableRowFinal.getId() + "");
-					
-					if (FluidListAdapter.this.viewBehavior.getTableLayoutId() != null) {
-						// Table Layout, use name of row
-						String[] comps = tableRowFinal.getLayout().split("\\.");
-				        String rowLayout = comps[comps.length - 1];
-				        eventInfo.setUserInfo(rowLayout);
-					} else {
-						// Use index of row
-						eventInfo.setUserInfo(tableRowFinal.getId());
-					}
-					
-					GlobalState.fluidApp.getEventsManager().userTapped(parentLayout.getViewPath(), eventInfo);
-				}
-			});
+			//final TableRow tableRowFinal = tableRow;
+			//ListAdapterClickListener listener = new ListAdapterClickListener();
+			listener.rootCustomLayout = rootCustomLayout;
+			listener.dataPrefixKeyFinal = dataPrefixKeyFinal;
+			listener.tableRowFinal = tableRow;
+			listener.tableLayoutId = FluidListAdapter.this.viewBehavior.getTableLayoutId();
+			listener.parentViewPath = parentLayout.getViewPath();
+			customLayout.setOnClickListener(listener);
 		}
 		
 		return customLayout;
 	}
 
+	static class ListAdapterClickListener implements OnClickListener {
+		
+		CustomLayout rootCustomLayout;
+		String dataPrefixKeyFinal;
+		TableRow tableRowFinal;
+		String tableLayoutId;//FluidListAdapter.this.viewBehavior.getTableLayoutId()
+		String parentViewPath;//parentLayout.getViewPath()
+		
+		@Override
+		public void onClick(View v) {
+			
+			if (!rootCustomLayout.isUserActivityEnabled()) {
+				return;
+			}
+			
+			EventInfo eventInfo = new EventInfo();
+			eventInfo.setDataModelKeyParent(dataPrefixKeyFinal);
+			eventInfo.setDataModelKey(tableRowFinal.getId() + "");
+			
+			if (tableLayoutId != null) {
+				// Table Layout, use name of row
+				String[] comps = tableRowFinal.getLayout().split("\\.");
+		        String rowLayout = comps[comps.length - 1];
+		        eventInfo.setUserInfo(rowLayout);
+			} else {
+				// Use index of row
+				eventInfo.setUserInfo(tableRowFinal.getId());
+			}
+			
+			GlobalState.fluidApp.getEventsManager().userTapped(parentViewPath, eventInfo);
+		}
+	}
+	
 	private void addViewToCache(final String dataPrefixKey, final long itemId,
 			String dataModelListenerId, CustomLayout customLayout) {
 		
+		/*
 		viewsById.put(itemId, customLayout);
 		final String listenerId = dataModelListenerId + "-table-cache-" + dataPrefixKey + "-" + itemId;
 		
@@ -237,12 +279,18 @@ public class FluidListAdapter extends BaseAdapter {
 						}
 						CustomLayout l = viewsById.remove(itemId);
 						GlobalState.fluidApp.getDataModelManager().removeDataChangeListener(listenerId);
+						System.out.println("hstdbc cleanup");
 						l.cleanup();
 					}
 				});
+				*/
 	}
 
 	int getHeightForRowLayout(Layout layout, double width, String dataModelPrefix, long objectId) {
+		
+		if (true) {
+			return 100;
+		}
 		
 		double height;
 		
@@ -328,14 +376,19 @@ public class FluidListAdapter extends BaseAdapter {
 
 	public void cleanup() {
 		
-		for (CustomLayout l : viewsById.values()) {
-			
-			l.cleanup();
-		}
+		Runnable r = new Runnable() {
+			@Override
+			public void run() {
+				for (CustomLayout l : layoutsCreated) {
+					l.cleanup();
+				}
+			}
+		};
+		cleanupService.schedule(r, 4, TimeUnit.SECONDS);		
 	}
 	
 	protected void precomputeHeightsAsync(final ViewGroup parent, boolean interrupt) {
-		
+		/*
 		boolean isRowLayout = viewBehavior.getRowProvider().getRowLayout() != null;
 		
 		if (!isRowLayout) {
@@ -349,17 +402,19 @@ public class FluidListAdapter extends BaseAdapter {
 		}
 		
 		precomputeTask = new PrecomputeTask(parent);
-		precomputeService.schedule(precomputeTask, 2, TimeUnit.SECONDS); // don't start immediately
+		precomputeService.schedule(precomputeTask, 2, TimeUnit.SECONDS); // don't start immediately*/
 	}
 	
 	protected void cancelPrecomputeHeightsAsync() {
 
+		/*
 		if (precomputeTask != null) {
 			precomputeTask.setCancelled(true);
 			precomputeTask = null;
-		}
+		}*/
 	}
 	
+	/*
 	public class PrecomputeTask implements Runnable {
 		
 		boolean cancelled = false;
@@ -497,6 +552,6 @@ public class FluidListAdapter extends BaseAdapter {
     		}
         }
 
-    }
+    }*/
 	
 }

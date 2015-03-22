@@ -6,11 +6,11 @@ import android.view.ViewGroup;
 
 public class CustomTextViewContainer extends ViewGroup implements FluidViewAndroid {
 
-	private Bounds bounds;
+	protected Bounds bounds;
 	
 	CustomTextView view;
 	
-	String dataModelListenerId;
+	protected String dataModelListenerId;
 	
 	public CustomTextViewContainer(Context context, CustomTextView view, Bounds bounds) {
         super(context);

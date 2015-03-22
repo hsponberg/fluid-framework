@@ -31,9 +31,9 @@ public class FluidImageView extends View implements FluidViewAndroid {
 
 	protected ImageBounds imageBounds;
 	
-	boolean needToComputeRects = true;
+	protected boolean needToComputeRects = true;
 	
-	Double aspectRatio;
+	protected Double aspectRatio;
 	
 	Paint paint = new Paint();
 	
@@ -53,6 +53,17 @@ public class FluidImageView extends View implements FluidViewAndroid {
 			final String viewPath, final String dataModelKeyParent, final String dataModelKey,
 			final CustomLayout rootCustomLayout, final Color tintColor) {
 		super(context);
+		recycle(bitmap, imageName, imageBounds, viewPath, dataModelKeyParent, dataModelKey, rootCustomLayout, tintColor);
+	}
+	
+	public void recycle(Bitmap bitmap, String imageName, ImageBounds imageBounds, 
+			final String viewPath, final String dataModelKeyParent, final String dataModelKey,
+			final CustomLayout rootCustomLayout, final Color tintColor) {
+		
+		if (this.bitmap != null) {
+			this.bitmap.recycle();
+		}
+		
 		this.tintColor = (tintColor == null) ? null : CustomLayout.getColor(tintColor);
 		this.imageName = imageName;
 		this.imageBounds = imageBounds;

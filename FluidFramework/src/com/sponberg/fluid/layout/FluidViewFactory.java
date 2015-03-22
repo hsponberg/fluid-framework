@@ -26,6 +26,14 @@ public class FluidViewFactory {
 		registeredViewTypes.get(type).updateFluidView(fluidView, view, userInfo);
 	}
 	
+	public void recycleView(String type, Object fluidView, ViewPosition view, Object userInfo) {
+		FluidViewBuilder builder = registeredViewTypes.get(type);
+		if (builder == null) {
+			throw new RuntimeException("There is no builder registered for " + type);
+		}
+		registeredViewTypes.get(type).recycleFluidView(fluidView, view, userInfo);
+	}
+	
 	public void cleanupView(String type, Object fluidView) {
 		FluidViewBuilder builder = registeredViewTypes.get(type);
 		if (builder == null) {
@@ -39,6 +47,8 @@ public class FluidViewFactory {
 		public Object createFluidView(ViewPosition view, Object userInfo);
 		
 		public void updateFluidView(Object fluidView, ViewPosition view, Object userInfo);
+		
+		public void recycleFluidView(Object fluidView, ViewPosition view, Object userInfo);
 		
 		public void cleanupFluidView(Object fluidView);
 	}

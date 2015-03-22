@@ -233,6 +233,112 @@ public class FluidViewFactoryRegistration {
 		}
 
 		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			final FluidViewBuilderInfo info = (FluidViewBuilderInfo) userInfo;
+			((FluidViewAndroid) fluidView).setBounds(info.bounds);
+			
+			final ViewBehaviorLabel viewBehavior = (ViewBehaviorLabel) view
+					.getViewBehavior();
+			
+			final CustomTextViewContainer vc = (CustomTextViewContainer) fluidView;
+			
+			removeDataChangeObserver(vc.getDataModelListenerId());
+			vc.setOnTouchListener(null);
+			
+			vc.setDataModelListenerId(info.listenerId);
+			
+			final CustomTextView label = vc.view;
+			label.viewBehavior = viewBehavior;
+			label.bounds.setTo(info.bounds);
+			label.rootCustomLayout = info.customLayout;
+			label.needsSizeAndPosition = true;
+			
+			int clearColor = 0x00000000;
+			label.setBackgroundColor(clearColor);
+			vc.setBackgroundColor(clearColor);
+
+			if (info.customLayout.isListenToDataModelChanges()) {
+				
+				final CustomTextViewContainer finalLabel = vc;
+				addDataChangeObserverFor(info.dataModelPrefix, view.getKey(),
+						info.listenerId, info.context, false,
+						new DataChangeRunnable() {
+							@Override
+							public void run(String key, String... subkeys) {
+								updateLabel(finalLabel, view, info);
+							}
+							@Override
+							public void runRemove(String key) {
+								// hstdbc what to do?
+							}
+						});
+			}
+
+			if (GlobalState.fluidApp.getEventsManager().isListeningForTapAt(info.viewPath)) {
+				// Only add this if the app is listening for a touch,
+				// because once you add an event listener, Android will stop sending
+				// events to views underneath the label
+				OnTouchListenerClick listener = new OnTouchListenerClick("labelBuilder" + info.viewPath) {
+
+					@Override
+					public void tap() {
+
+						if (!info.customLayout.isUserActivityEnabled()) {
+							return;
+						}
+
+						label.userTapped(info.viewPath, info.dataModelPrefix, view.getKey());
+					}
+
+					@Override
+					public void touchDown() {
+						if (viewBehavior.getTextColorPressed() != null) {
+							label.setTextColor(CustomLayout.getColor(viewBehavior
+									.getTextColorPressed()));
+						}
+						if (viewBehavior.getBackgroundColorPressed() != null) {
+							vc.setBackgroundColor(CustomLayout.getColor(viewBehavior.getBackgroundColorPressed()));
+						}
+					}
+
+					@Override
+					public void touchMove() {
+						touchUp();
+					}
+
+					@Override
+					public void touchUp() {
+						if (viewBehavior.getTextColorPressed() != null && viewBehavior.getTextColor() != null) {
+							label.setTextColor(CustomLayout.getColor(viewBehavior
+									.getTextColor()));
+						}
+						if (viewBehavior.getBackgroundColorPressed() != null) { // does this prefix key need to add fluidView key ?
+							com.sponberg.fluid.layout.Color color = viewBehavior.getBackgroundColor(info.dataModelPrefix);
+							if (color == null) {
+								vc.setBackgroundColor(Color.TRANSPARENT);
+							} else {
+								vc.setBackgroundColor(CustomLayout.getColor(viewBehavior.getBackgroundColor(info.dataModelPrefix)));
+							}
+						}
+					}
+				};
+
+				vc.setOnTouchListener(listener);
+			}
+
+			updateFluidView(vc, view, userInfo);
+
+			if (viewBehavior.getBorderSize() != null && viewBehavior.getBorderSize().intValue() > 0 && viewBehavior.getBorderColor() != null) {
+				int borderColor = 0;
+				borderColor = CustomLayout.getColor(viewBehavior.getBorderColor());
+				styleBorder(vc, viewBehavior.getBorderSize().intValue(), borderColor, viewBehavior.getCornerRadius());
+			}			
+			
+		}
+		
+		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
 
@@ -371,6 +477,35 @@ public class FluidViewFactoryRegistration {
 			return button;
 		}
 
+		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			final FluidViewBuilderInfo info = (FluidViewBuilderInfo) userInfo;
+			((FluidViewAndroid) fluidView).setBounds(info.bounds);
+			
+			final ButtonFluid button = (ButtonFluid) fluidView;
+			
+			button.setOnClickListener(null);
+			
+			button.setBackgroundColor(Color.TRANSPARENT);
+
+			button.setOnClickListener(new OnClickListener() {
+				@Override
+				public void onClick(android.view.View androidView) {
+
+					if (info.modalView != null) {
+						info.modalView.setUserSelection(view.getId());
+						((Dialog) info.modalView.getFluidData()).dismiss();
+					} else {
+						button.userTapped();
+					}
+				}
+			});
+
+			updateFluidView(button, view, userInfo);
+		}
+		
 		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
@@ -557,6 +692,57 @@ public class FluidViewFactoryRegistration {
 		}
 
 		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			FluidImageView image = (FluidImageView) fluidView;
+
+			final FluidViewBuilderInfo info = (FluidViewBuilderInfo) userInfo;
+			((FluidViewAndroid) fluidView).setBounds(info.bounds);
+			
+			ViewBehaviorImage viewBehavior = (ViewBehaviorImage) view
+					.getViewBehavior();
+
+			Bounds bounds = info.bounds;
+
+			String imageNameKey = viewBehavior.getImageWith(info.dataModelPrefix);
+
+			Bitmap bm;
+			ImageBounds imageBounds;
+			Double aspectRatio = null;
+			if (imageNameKey == null) {
+				bm = Bitmap.createBitmap(bounds.width, bounds.height, Config.ARGB_8888);
+				imageBounds = new ImageBounds(0, 0, bounds.width, bounds.height);
+			} else if (imageNameKey.startsWith("system:")) {
+				bm = getSystemBitmapFor(imageNameKey, info.context.getResources());
+				aspectRatio = bm.getWidth() * 1.0 / bm.getHeight();
+				imageBounds = viewBehavior.getImageWithBounds(bounds.width, bounds.height, aspectRatio);
+			} else {
+				imageBounds = viewBehavior.getImageBounds(imageNameKey, bounds.width, bounds.height);
+				bm = FluidViewFactoryRegistration.getBitmapFor(imageNameKey, imageBounds.getWidth(), imageBounds.getHeight(), info.context.getResources());
+			}
+
+			com.sponberg.fluid.layout.Color tintColor = null;
+			if (viewBehavior.getTintColor() != null) {
+				tintColor = viewBehavior.getTintColor();
+			} else if (viewBehavior.getTintColorKey() != null) {
+				String colorString = GlobalState.fluidApp.getDataModelManager().getValue(info.dataModelPrefix, viewBehavior.getTintColorKey(), "{0}", null);
+				tintColor = GlobalState.fluidApp.getViewManager().getColor(colorString);
+			}
+			
+			image.recycle(bm, imageNameKey, imageBounds,
+					info.viewPath, info.dataModelPrefix, view.getKey(), info.customLayout,
+					tintColor);
+			
+			if (aspectRatio != null) {
+				image.setAspectRatio(aspectRatio);
+			}
+
+			updateFluidView(image, view, info);			
+			
+		}
+		
+		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
 
@@ -634,6 +820,25 @@ public class FluidViewFactoryRegistration {
 		}
 
 		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			final FluidViewBuilderInfo info = (FluidViewBuilderInfo) userInfo;
+			((FluidViewAndroid) fluidView).setBounds(info.bounds);
+			
+			ViewFluidSpace space = (ViewFluidSpace) fluidView;
+
+			ViewBehaviorSpace viewBehavior = (ViewBehaviorSpace) view.getViewBehavior();
+
+			if (viewBehavior.getBorderSize() != null && viewBehavior.getBorderSize().intValue() > 0 && viewBehavior.getBorderColor() != null) {
+				int borderColor = 0;
+				borderColor = CustomLayout.getColor(viewBehavior.getBorderColor());
+				styleBorder(space, viewBehavior.getBorderSize().intValue(), borderColor, viewBehavior.getCornerRadius());
+			}
+			
+		}
+		
+		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
 
@@ -667,6 +872,26 @@ public class FluidViewFactoryRegistration {
 			return layout;
 		}
 
+		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			final FluidViewBuilderInfo info = (FluidViewBuilderInfo) userInfo;
+			((FluidViewAndroid) fluidView).setBounds(info.bounds);
+			
+			ViewBehaviorSubview viewBehavior = (ViewBehaviorSubview) view
+					.getViewBehavior();
+
+			CustomLayout layout = (CustomLayout) fluidView;
+			layout.recycle(null,
+					GlobalState.fluidApp.getLayout(viewBehavior.getSubview()),
+					info.bounds, info.dataModelPrefix, null, info.viewPath,
+					true, info.customLayout, true, null, null, false, false,
+					info.insideTableView);
+
+			updateFluidView(layout, view, info);
+		}
+		
 		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
@@ -702,6 +927,20 @@ public class FluidViewFactoryRegistration {
 			return subviewRepeat;
 		}
 
+		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			final FluidViewBuilderInfo info = (FluidViewBuilderInfo) userInfo;
+			((FluidViewAndroid) fluidView).setBounds(info.bounds);
+			
+			ViewBehaviorSubviewRepeat viewBehavior = (ViewBehaviorSubviewRepeat) view
+					.getViewBehavior();
+
+			SubviewRepeatView subviewRepeat = (SubviewRepeatView) fluidView;
+			subviewRepeat.recycle(info, viewBehavior);
+		}
+		
 		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
@@ -822,6 +1061,13 @@ public class FluidViewFactoryRegistration {
 			return table;
 		}
 
+		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			throw new RuntimeException("Unable to recycle");
+		}
+		
 		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
@@ -973,6 +1219,14 @@ public class FluidViewFactoryRegistration {
 		}
 
 		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			throw new RuntimeException("Unable to recycle");
+			
+		}
+		
+		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
 
@@ -1093,6 +1347,14 @@ public class FluidViewFactoryRegistration {
 		}
 
 		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			throw new RuntimeException("Unable to recycle");
+			
+		}
+		
+		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
 
@@ -1137,6 +1399,14 @@ public class FluidViewFactoryRegistration {
 		}
 
 		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			throw new RuntimeException("Unable to recycle");
+			
+		}
+		
+		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {
 
@@ -1172,6 +1442,14 @@ public class FluidViewFactoryRegistration {
 			return radioGroup;
 		}
 
+		@Override
+		public void recycleFluidView(final Object fluidView, final ViewPosition view,
+				Object userInfo) {
+		
+			throw new RuntimeException("Unable to recycle");
+			
+		}
+		
 		@Override
 		public void updateFluidView(final Object fluidView, final ViewPosition view,
 				Object userInfo) {

@@ -32,6 +32,10 @@ public class SubviewRepeatView extends LinearLayout implements FluidViewAndroid 
 	public SubviewRepeatView(FluidViewBuilderInfo info, ViewBehaviorSubviewRepeat viewBehavior) {
 		
 		super(info.context);
+		recycle(info, viewBehavior);
+	}
+	
+	public void recycle(FluidViewBuilderInfo info, ViewBehaviorSubviewRepeat viewBehavior) {
 		
 		super.setOrientation(LinearLayout.VERTICAL);
 		

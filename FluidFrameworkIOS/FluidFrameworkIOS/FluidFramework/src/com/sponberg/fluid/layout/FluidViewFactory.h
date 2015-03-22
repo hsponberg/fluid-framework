@@ -29,6 +29,11 @@ withFFTFluidViewFactory_FluidViewBuilder:(id<FFTFluidViewFactory_FluidViewBuilde
            withFFTViewPosition:(FFTViewPosition *)view
                         withId:(id)userInfo;
 
+- (void)recycleViewWithNSString:(NSString *)type
+                         withId:(id)fluidView
+            withFFTViewPosition:(FFTViewPosition *)view
+                         withId:(id)userInfo;
+
 - (void)cleanupViewWithNSString:(NSString *)type
                          withId:(id)fluidView;
 
@@ -52,6 +57,10 @@ typedef FFTFluidViewFactory ComSponbergFluidLayoutFluidViewFactory;
 - (void)updateFluidViewWithId:(id)fluidView
           withFFTViewPosition:(FFTViewPosition *)view
                        withId:(id)userInfo;
+
+- (void)recycleFluidViewWithId:(id)fluidView
+           withFFTViewPosition:(FFTViewPosition *)view
+                        withId:(id)userInfo;
 
 - (void)cleanupFluidViewWithId:(id)fluidView;
 

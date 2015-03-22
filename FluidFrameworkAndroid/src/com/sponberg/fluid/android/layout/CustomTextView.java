@@ -9,8 +9,8 @@ import android.util.TypedValue;
 import android.widget.TextView;
 
 import com.sponberg.fluid.GlobalState;
-import com.sponberg.fluid.layout.ViewBehaviorLabel;
 import com.sponberg.fluid.layout.ActionListener.EventInfo;
+import com.sponberg.fluid.layout.ViewBehaviorLabel;
 
 public class CustomTextView extends TextView {
 
@@ -20,20 +20,22 @@ public class CustomTextView extends TextView {
 	
 	int maxLines = -1;
 	
-	private Bounds bounds;
+	protected Bounds bounds;
 	
-	private final ViewBehaviorLabel viewBehavior;
+	protected ViewBehaviorLabel viewBehavior;
 	
 	double adjustY = 0;
 	
-	boolean needsSizeAndPosition = true;
+	protected boolean needsSizeAndPosition = true;
 	
 	int labelHashCode;
 	
 	int cachedWidth;
 	int cachedHeight;
 	
-	CustomLayout rootCustomLayout;
+	protected CustomLayout rootCustomLayout;
+	
+	protected boolean updateEnabled = true;
 	
 	public int getLabelHashCode() {
 		return labelHashCode;
@@ -52,8 +54,9 @@ public class CustomTextView extends TextView {
 	}
 
 	public void setBounds(Bounds bounds) {
-		if (!this.bounds.equals(bounds))
+		if (!this.bounds.equals(bounds)) {
 			this.needsSizeAndPosition = true;
+		}
 		this.bounds = bounds;
 	}
 
@@ -77,14 +80,16 @@ public class CustomTextView extends TextView {
 		GlobalState.fluidApp.getEventsManager().userTapped(viewPath, eventInfo);
 	}
 	
+	@Override
 	public int getMaxLines() {
 		return maxLines;
 	}
 	
 	@Override
 	protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-		if (needsSizeAndPosition)
+		if (needsSizeAndPosition) {
 			sizeAndPositionLabel();
+		}
 		this.setMeasuredDimension(cachedWidth, cachedHeight);
 	}
 
@@ -94,8 +99,11 @@ public class CustomTextView extends TextView {
 	}
 	
 	public void setCustomText(CharSequence text) {
-		super.setText(text);
-		needsSizeAndPosition = true;
+		
+		if (updateEnabled) {
+			super.setText(text);
+			needsSizeAndPosition = true;
+		}
 	}
 	
 	public void sizeAndPositionLabel() {
